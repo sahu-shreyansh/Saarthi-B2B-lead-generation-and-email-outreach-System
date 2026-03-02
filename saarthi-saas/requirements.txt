@@ -1,0 +1,35 @@
+# FastAPI
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+
+# Auth
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+
+# Gmail API
+google-auth==2.37.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.159.0
+
+# Stripe
+stripe==11.4.1
+
+# Scheduler
+apscheduler==3.10.4
+
+# HTTP client (for LLM calls)
+httpx==0.28.1
+
+# Logging
+structlog==24.4.0
+
+# Env
+pydantic-settings==2.7.1
+python-dotenv==1.0.1

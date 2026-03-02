@@ -1,0 +1,11 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Reference images (not part of the app)
+ref_*.png
+*.psd
+
+# Planning docs (kept locally, not in repo)
+# saas.md
+# ui ux.md
