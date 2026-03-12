@@ -131,6 +131,18 @@ export default function CampaignsPage() {
                                 </div>
                                 <div className="flex items-center gap-1" style={{ gap: 8 }}>
                                     <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => router.push(`/campaigns/${c.id}/leads`)}
+                                    >
+                                        Leads
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => router.push(`/campaigns/${c.id}/sequence`)}
+                                    >
+                                        Sequence
+                                    </button>
+                                    <button
                                         className={`btn ${c.status === 'active' ? 'btn-secondary' : 'btn-primary'} btn-sm`}
                                         disabled={startMutation.isPending || pauseMutation.isPending}
                                         onClick={() => handleStartPause(c)}

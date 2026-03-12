@@ -18,6 +18,7 @@ celery_app = Celery(
     "saarthi_worker",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
+    set_as_current=True,
     include=[
         "app.tasks.lead_pipeline",
         "app.tasks.campaign_pipeline",
@@ -26,6 +27,9 @@ celery_app = Celery(
         "app.tasks.followup_pipeline"
     ]
 )
+
+celery_app.set_default()
+print(f"CELERY_APP_INIT: Broker is {celery_app.conf.broker_url}")
 
 celery_app.conf.update(
     task_serializer="json",
@@ -79,6 +83,10 @@ celery_app.conf.update(
 
 # ── Automated schedules ────────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
+    "process-outbound-sequence": {
+        "task": "process_outbound_sequence_task",
+        "schedule": crontab(minute="*"), # Every minute
+    },
     "fetch-inbox-messages": {
         "task": "fetch_new_messages_task",
         "schedule": crontab(minute="*/5"),

@@ -86,3 +86,55 @@ export function useCampaignEmails(id: string) {
         enabled: !!id
     });
 }
+
+export function useCampaignLeads(id: string) {
+    return useQuery({
+        queryKey: ['campaigns', id, 'leads'],
+        queryFn: async () => {
+            const { data } = await api.get<any[]>(`/leads?campaign_id=${id}`); // Reusing list_leads with filter
+            return data;
+        },
+        enabled: !!id
+    });
+}
+
+export function useUploadLeads() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, file }: { id: string; file: File }) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const { data } = await api.post(`/campaigns/${id}/upload`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns', variables.id, 'leads'] });
+        }
+    });
+}
+
+export function useCampaignSequence(id: string) {
+    return useQuery({
+        queryKey: ['campaigns', id, 'sequence'],
+        queryFn: async () => {
+            const { data } = await api.get<any>(`/campaigns/${id}/sequence`);
+            return data;
+        },
+        enabled: !!id
+    });
+}
+
+export function useUpdateCampaignSequence() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, ...payload }: { id: string; name: string; steps: any[] }) => {
+            const { data } = await api.post(`/campaigns/${id}/sequence`, payload);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns', variables.id, 'sequence'] });
+        }
+    });
+}

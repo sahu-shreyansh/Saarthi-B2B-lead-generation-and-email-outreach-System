@@ -8,6 +8,9 @@ from app.middleware.rate_limit import RateLimitMiddleware
 
 # Import Routers
 from app.routers import leadgen, auth, campaigns, dashboard, leads, inbox, sending_accounts, billing, stripe, intelligence, tasks, discovery, meetings, settings as settings_router, webhooks
+from app.workers.celery_app import celery_app # Ensure Celery registry is loaded
+
+print(f"WEB_PROCESS_DEBUG: Celery Broker URL is {celery_app.conf.broker_url}")
 
 app = FastAPI(
     title=settings.APP_NAME,

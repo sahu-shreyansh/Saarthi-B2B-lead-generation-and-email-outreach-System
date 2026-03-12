@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -12,34 +13,53 @@ from app.core.deps import get_current_user_and_org
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 class LeadCreate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    email_verified: Optional[bool] = False
+    title: Optional[str] = None
+    company: Optional[str] = None
     company_name: Optional[str] = None
     website: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
+    linkedin_url: Optional[str] = None
     description: Optional[str] = None
-    contact_name: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
     score: Optional[int] = 0
-    status: Optional[str] = "new"
+    status: Optional[str] = "pending"
+    current_step_number: Optional[int] = 0
+    next_action_at: Optional[datetime] = None
     source: Optional[str] = "manual"
-    metadata: Optional[Dict[str, Any]] = {}
+    metadata: Optional[Dict[str, Any]] = Field(default={}, alias="metadata_")
 
 class LeadUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    email_verified: Optional[bool] = None
+    title: Optional[str] = None
+    company: Optional[str] = None
     company_name: Optional[str] = None
     website: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
+    linkedin_url: Optional[str] = None
     description: Optional[str] = None
-    contact_name: Optional[str] = None
-    contact_email: Optional[EmailStr] = None
     score: Optional[int] = None
     status: Optional[str] = None
+    current_step_number: Optional[int] = None
+    next_action_at: Optional[datetime] = None
     source: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default=None, alias="metadata_")
 
 class LeadResponse(LeadCreate):
-    id: str
-    organization_id: str
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    campaign_id: Optional[uuid.UUID] = None
+    
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 class BulkLeadCreate(BaseModel):
     leads: List[LeadCreate]
@@ -61,22 +81,7 @@ def create_lead(
     db.commit()
     db.refresh(new_lead)
     
-    response_data = {
-        "id": str(new_lead.id),
-        "organization_id": str(new_lead.organization_id),
-        "company_name": new_lead.company_name,
-        "website": new_lead.website,
-        "industry": new_lead.industry,
-        "location": new_lead.location,
-        "description": new_lead.description,
-        "contact_name": new_lead.contact_name,
-        "contact_email": new_lead.contact_email,
-        "score": new_lead.score,
-        "status": new_lead.status,
-        "source": new_lead.source,
-        "metadata": new_lead.metadata_
-    }
-    return response_data
+    return new_lead
 
 @router.post("/bulk-create", response_model=List[LeadResponse])
 def bulk_create_leads(
@@ -96,28 +101,12 @@ def bulk_create_leads(
         
     db.commit()
     
-    responses = []
-    for lead in created_leads:
-        responses.append({
-            "id": str(lead.id),
-            "organization_id": str(lead.organization_id),
-            "company_name": lead.company_name,
-            "website": lead.website,
-            "industry": lead.industry,
-            "location": lead.location,
-            "description": lead.description,
-            "contact_name": lead.contact_name,
-            "contact_email": lead.contact_email,
-            "score": lead.score,
-            "status": lead.status,
-            "source": lead.source,
-            "metadata": lead.metadata_
-        })
-    return responses
+    return created_leads
 
 
 @router.get("", response_model=List[LeadResponse])
 def list_leads(
+    campaign_id: Optional[str] = Query(None),
     industry: Optional[str] = Query(None),
     score_min: Optional[int] = Query(None),
     score_max: Optional[int] = Query(None),
@@ -131,6 +120,13 @@ def list_leads(
     current_user, active_org_id, role = deps
     query = db.query(Lead).filter(Lead.organization_id == active_org_id)
     
+    if campaign_id:
+        try:
+            camp_uuid = uuid.UUID(campaign_id)
+            query = query.filter(Lead.campaign_id == camp_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Campaign ID")
+
     if industry:
         query = query.filter(Lead.industry.ilike(f"%{industry}%"))
     if status:
@@ -150,24 +146,7 @@ def list_leads(
         )
             
     leads = query.order_by(Lead.created_at.desc()).offset(skip).limit(limit).all()
-    
-    return [
-        {
-            "id": str(l.id),
-            "organization_id": str(l.organization_id),
-            "company_name": l.company_name,
-            "website": l.website,
-            "industry": l.industry,
-            "location": l.location,
-            "description": l.description,
-            "contact_name": l.contact_name,
-            "contact_email": l.contact_email,
-            "score": l.score,
-            "status": l.status,
-            "source": l.source,
-            "metadata": l.metadata_
-        } for l in leads
-    ]
+    return leads
 
 @router.get("/{id}", response_model=LeadResponse)
 def get_lead(
@@ -186,21 +165,7 @@ def get_lead(
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
         
-    return {
-        "id": str(lead.id),
-        "organization_id": str(lead.organization_id),
-        "company_name": lead.company_name,
-        "website": lead.website,
-        "industry": lead.industry,
-        "location": lead.location,
-        "description": lead.description,
-        "contact_name": lead.contact_name,
-        "contact_email": lead.contact_email,
-        "score": lead.score,
-        "status": lead.status,
-        "source": lead.source,
-        "metadata": lead.metadata_
-    }
+    return lead
 
 @router.patch("/{id}", response_model=LeadResponse)
 def update_lead(
@@ -229,21 +194,7 @@ def update_lead(
     db.commit()
     db.refresh(lead)
     
-    return {
-        "id": str(lead.id),
-        "organization_id": str(lead.organization_id),
-        "company_name": lead.company_name,
-        "website": lead.website,
-        "industry": lead.industry,
-        "location": lead.location,
-        "description": lead.description,
-        "contact_name": lead.contact_name,
-        "contact_email": lead.contact_email,
-        "score": lead.score,
-        "status": lead.status,
-        "source": lead.source,
-        "metadata": lead.metadata_
-    }
+    return lead
 
 @router.delete("/{id}")
 def delete_lead(

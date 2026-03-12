@@ -8,10 +8,13 @@ import {
   BarChart as BarChartIcon, LineChart as LineChartIcon
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  AreaChart, Area
+  LineChart, Line, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { fetchMetrics, fetchRecentActivity, fetchLeadGrowth, fetchEmailPerformance } from '@/lib/api';
+import {
+  fetchMetrics, fetchRecentActivity, fetchLeadGrowth,
+  fetchEmailPerformance, fetchRevenueMetrics
+} from '@/lib/api';
 import Link from 'next/link';
 import { DashboardMetrics } from '@/types';
 
@@ -78,7 +81,7 @@ const ACTIVITY_ICONS: Record<string, React.ElementType> = {
   'campaign_completed': Megaphone,
 };
 
-function PerformanceCharts({ leadGrowth, emailPerf, isLoading }: { leadGrowth: any[], emailPerf: any, isLoading: boolean }) {
+function PerformanceCharts({ leadGrowth, emailPerf, isLoading }: { leadGrowth: any[], emailPerf: any[], isLoading: boolean }) {
   if (isLoading) {
     return (
       <div className="grid-2" style={{ marginTop: 24, gap: 24 }}>
@@ -127,41 +130,41 @@ function PerformanceCharts({ leadGrowth, emailPerf, isLoading }: { leadGrowth: a
         </div>
       </div>
 
-      {/* Email Performance Chart */}
+      {/* Outreach Daily Trend Chart */}
       <div className="card-flat">
         <div className="flex items-center justify-between mb-6">
-          <div className="section-title">Outreach Performance</div>
-          <BarChartIcon size={14} className="text-muted" />
+          <div className="section-title">Daily Outreach Trends</div>
+          <Activity size={14} className="text-muted" />
         </div>
         <div style={{ width: '100%', height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={[
-              { name: 'Sent', value: emailPerf?.sent || 0, color: 'var(--text-muted)' },
-              { name: 'Opened', value: emailPerf?.opened || 0, color: 'var(--accent-cyan)' },
-              { name: 'Clicked', value: emailPerf?.clicked || 0, color: 'var(--accent-primary)' },
-              { name: 'Replied', value: emailPerf?.replied || 0, color: 'var(--success)' },
-            ]}>
+            <LineChart data={emailPerf}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+              <XAxis
+                dataKey="date"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                tickFormatter={(str) => {
+                  const date = new Date(str);
+                  return `${date.getMonth() + 1}/${date.getDate()}`;
+                }}
+              />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
               <Tooltip
-                cursor={{ fill: 'var(--bg-hover)' }}
                 contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }}
+                itemStyle={{ color: 'var(--text-primary)' }}
               />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                {
-                  [
-                    { name: 'Sent', color: 'var(--text-muted)' },
-                    { name: 'Opened', color: 'var(--accent-cyan)' },
-                    { name: 'Clicked', color: 'var(--accent-primary)' },
-                    { name: 'Replied', color: 'var(--success)' },
-                  ].map((entry, index) => (
-                    <Bar key={`cell-${index}`} fill={entry.color} dataKey="value" />
-                  ))
-                }
-              </Bar>
-            </BarChart>
+              <Line type="monotone" dataKey="sent" stroke="var(--text-muted)" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="opened" stroke="var(--accent-cyan)" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="replied" stroke="var(--success)" strokeWidth={2} dot={false} />
+            </LineChart>
           </ResponsiveContainer>
+        </div>
+        <div className="flex gap-4 mt-4 justify-center">
+          <div className="flex items-center gap-1.5 text-xs text-secondary"><div className="w-2.5 h-2.5 rounded-sm bg-[var(--text-muted)]" /> Sent</div>
+          <div className="flex items-center gap-1.5 text-xs text-secondary"><div className="w-2.5 h-2.5 rounded-sm bg-[var(--accent-cyan)]" /> Opened</div>
+          <div className="flex items-center gap-1.5 text-xs text-secondary"><div className="w-2.5 h-2.5 rounded-sm bg-[var(--success)]" /> Replied</div>
         </div>
       </div>
     </div>
@@ -215,7 +218,7 @@ function ActivityFeed({ activities, isLoading }: { activities: any[], isLoading:
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { data: metrics, isLoading: isMetricsLoading, isError: isMetricsError } = useQuery({
+  const { data: metrics, isLoading: isMetricsLoading, isError: isMetricsError, error: metricsError } = useQuery({
     queryKey: ['dashboard', 'metrics'],
     queryFn: fetchMetrics,
     refetchInterval: 60000,
@@ -234,7 +237,12 @@ export default function DashboardPage() {
 
   const { data: emailPerf, isLoading: isPerfLoading } = useQuery({
     queryKey: ['dashboard', 'emailPerf'],
-    queryFn: fetchEmailPerformance,
+    queryFn: () => fetchEmailPerformance(30),
+  });
+
+  const { data: revenue, isLoading: isRevLoading, isError: isRevError, error: revError } = useQuery({
+    queryKey: ['dashboard', 'revenue'],
+    queryFn: fetchRevenueMetrics,
   });
 
   const m: DashboardMetrics = metrics || { total_leads: 0, qualified_leads: 0, active_campaigns: 0, emails_sent: 0, replies_received: 0, meetings_booked: 0, conversion_rate: 0 };
@@ -250,7 +258,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Backend Error Banner */}
-      {isMetricsError && (
+      {(isMetricsError || isRevError) && (metricsError as any)?.response?.status !== 401 && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -264,16 +272,34 @@ export default function DashboardPage() {
           color: 'var(--danger)',
         }}>
           <AlertCircle size={15} />
-          Backend unreachable — ensure the database and Redis are running.
+          <span>
+            Backend connectivity issue — ensure local services are running.
+            {(metricsError as any)?.response?.status && ` (Status: ${(metricsError as any).response.status})`}
+            {(!metricsError && (revError as any)?.response?.status) && ` (Status: ${(revError as any).response.status})`}
+          </span>
         </div>
       )}
 
       {/* KPI Grid */}
       <div className="kpi-grid">
-        {isMetricsLoading ? (
-          [1, 2, 3, 4, 5, 6].map(i => <KpiSkeleton key={i} />)
+        {isMetricsLoading || isRevLoading ? (
+          [1, 2, 3, 4, 5, 6, 7, 8].map(i => <KpiSkeleton key={i} />)
         ) : (
           <>
+            <KpiCard
+              label="Pipeline Value"
+              value={`$${(revenue?.total_pipeline_value || 0).toLocaleString()}`}
+              delta={`~${(revenue?.projected_revenue || 0).toLocaleString()} projected`}
+              positive={true}
+              icon={BarChartIcon}
+            />
+            <KpiCard
+              label="AI Cost Savings"
+              value={`$${(revenue?.ai_savings || 0).toLocaleString()}`}
+              delta={`${revenue?.roi_multiplier}x ROI`}
+              positive={true}
+              icon={Zap}
+            />
             <KpiCard
               label="Total Leads"
               value={m.total_leads.toLocaleString()}

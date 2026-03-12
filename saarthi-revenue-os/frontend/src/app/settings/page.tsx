@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchMe, fetchOrgSettings, updateOrgSettings, configureEmailIntegration, configureCalendarIntegration } from '@/lib/api';
-import { Building2, MessageSquare, Plug } from 'lucide-react';
+import { fetchMe, fetchOrgSettings, updateOrgSettings, configureEmailIntegration, configureCalendarIntegration, fetchSubscription } from '@/lib/api';
+import { Building2, MessageSquare, Plug, CreditCard, ExternalLink, Zap, Mail, ShieldCheck } from 'lucide-react';
 
 const SECTIONS = [
     { key: 'org', label: 'Organization details', icon: Building2 },
     { key: 'integrations', label: 'Integrations', icon: Plug },
     { key: 'ai', label: 'AI Auto-Reply', icon: MessageSquare },
+    { key: 'billing', label: 'Billing & Usage', icon: CreditCard },
 ];
 
 function SectionSkeleton() {
@@ -32,6 +33,12 @@ export default function SettingsPage() {
     const { data: settings, isLoading } = useQuery({
         queryKey: ['settings'],
         queryFn: fetchOrgSettings,
+        retry: false,
+    });
+
+    const { data: subscription, isLoading: loadingSub } = useQuery({
+        queryKey: ['subscription'],
+        queryFn: fetchSubscription,
         retry: false,
     });
 
@@ -235,6 +242,94 @@ export default function SettingsPage() {
                         <div style={{ marginTop: 24 }}>
                             <button className="btn btn-primary" onClick={handleSave} disabled={mut.isPending}>
                                 {mut.isPending ? 'Saving...' : 'Save Settings'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            case 'billing':
+                if (loadingSub) return <SectionSkeleton />;
+                return (
+                    <div style={{ padding: '28px 32px', maxWidth: 640 }}>
+                        <div className="flex items-center justify-between mb-8">
+                            <div>
+                                <h2 className="text-xl font-bold font-heading">Billing & Subscription</h2>
+                                <p className="text-sm text-secondary">Manage your plan and track resource usage</p>
+                            </div>
+                            <span className="px-3 py-1 bg-brand/10 text-brand border border-brand/20 rounded-full text-xs font-bold uppercase tracking-widest">
+                                {subscription?.plan} Plan
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                            {/* Credits Usage */}
+                            <div className="p-6 bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2 text-primary font-semibold">
+                                        <Zap size={18} className="text-brand" />
+                                        <span>AI Lead Credits</span>
+                                    </div>
+                                    <span className="text-xs text-secondary">Reset monthly</span>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-2xl font-bold font-heading text-primary">
+                                            {subscription?.credits_used} <span className="text-sm text-secondary font-normal">/ {subscription?.monthly_credit_limit}</span>
+                                        </span>
+                                        <span className="text-xs text-secondary font-medium">
+                                            {Math.round((subscription?.credits_used / subscription?.monthly_credit_limit) * 100)}% used
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-brand transition-all duration-500"
+                                            style={{ width: `${(subscription?.credits_used / subscription?.monthly_credit_limit) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Email Usage */}
+                            <div className="p-6 bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2 text-primary font-semibold">
+                                        <Mail size={18} className="text-success" />
+                                        <span>Emails Sent</span>
+                                    </div>
+                                    <span className="text-xs text-secondary">Cycle: Monthly</span>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-2xl font-bold font-heading text-primary">
+                                            {subscription?.emails_sent_this_month} <span className="text-sm text-secondary font-normal">/ {subscription?.monthly_credit_limit * 10}</span>
+                                        </span>
+                                        <span className="text-xs text-secondary font-medium">
+                                            {Math.round((subscription?.emails_sent_this_month / (subscription?.monthly_credit_limit * 10)) * 100)}%
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-[var(--bg-hover)] rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-success transition-all duration-500"
+                                            style={{ width: `${(subscription?.emails_sent_this_month / (subscription?.monthly_credit_limit * 10)) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Subscription Card */}
+                        <div className="p-6 bg-brand/[0.03] border border-brand/10 rounded-2xl flex items-center justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <ShieldCheck size={20} className="text-brand" />
+                                    <h3 className="font-bold text-lg">Scale your outreach</h3>
+                                </div>
+                                <p className="text-sm text-secondary leading-relaxed">
+                                    Get unlimited leads, higher sending limits, and advanced AI personalization by upgrading to a Pro plan.
+                                </p>
+                            </div>
+                            <button className="btn btn-primary flex items-center gap-2 shrink-0 group">
+                                Upgrade Plan
+                                <ExternalLink size={16} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                             </button>
                         </div>
                     </div>

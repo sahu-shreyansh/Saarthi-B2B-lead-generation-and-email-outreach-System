@@ -6,7 +6,7 @@ from celery import shared_task
 from app.database.database import SessionLocal
 from app.database.models import Campaign, Lead, CampaignEmail, WorkerLog, EmailEvent
 from app.services.email_generation_service import EmailGenerationService
-from app.services.email_sender import EmailSenderService
+from app.services.email_sender import EmailSender
 
 @shared_task(name="run_campaign", bind=True)
 def run_campaign(self, campaign_id: str):
@@ -56,7 +56,7 @@ def run_campaign(self, campaign_id: str):
             db.refresh(camp_email)
             
             # 3. Trigger Async Sending Task
-            send_email_task.delay(str(camp_email.id), str(campaign.organization_id))
+            send_email_task.delay(str(camp_email.id))
             
             # 4. Update Lead Status
             lead.status = "contacted"
@@ -78,8 +78,7 @@ def run_campaign(self, campaign_id: str):
 
 
 @shared_task(name="send_email_task", bind=True)
-def send_email_task(self, campaign_email_id: str, organization_id: str):
-    import asyncio
+def send_email_task(self, campaign_email_id: str):
     logger.info(f"Sending email {campaign_email_id}")
     db = SessionLocal()
     start_time = time.time()
@@ -95,26 +94,36 @@ def send_email_task(self, campaign_email_id: str, organization_id: str):
             camp_email.status = "failed"
             db.commit()
             return
+
+        # Fetch active sending account for the org
+        from app.database.models import SendingAccount
+        account = db.query(SendingAccount).filter(
+            SendingAccount.organization_id == lead.organization_id,
+            SendingAccount.is_active == True
+        ).first()
+
+        if not account:
+            logger.error(f"No active sending account for org {lead.organization_id}")
+            camp_email.status = "failed"
+            db.commit()
+            return
             
-        # Send via SendGrid or generic SMTP hook
-        # Using a sync wrapper around the async email sender purely for Celery standard usage
-        async def run_async_send():
-            return await EmailSenderService.send_email(
-                provider="smtp", # Mock provider fallback
-                to_email=lead.contact_email,
-                subject=camp_email.subject,
-                body=camp_email.body
-            )
-            
-        success, msg_id, meta = asyncio.run(run_async_send())
+        # Send via SMTP
+        msg_id = EmailSender.send_email(
+            account=account,
+            to_email=lead.contact_email,
+            subject=camp_email.subject,
+            body=camp_email.body
+        )
         
-        if success:
+        if msg_id:
             camp_email.status = "sent"
+            camp_email.message_id = msg_id
             # Track email event
             event = EmailEvent(
                 campaign_email_id=email_uuid,
                 event_type="sent",
-                metadata_={"message_id": msg_id, "provider_response": meta}
+                metadata_={"message_id": msg_id}
             )
             db.add(event)
         else:
@@ -122,7 +131,7 @@ def send_email_task(self, campaign_email_id: str, organization_id: str):
             event = EmailEvent(
                 campaign_email_id=email_uuid,
                 event_type="bounced",
-                metadata_={"error": msg_id}
+                metadata_={"error": "SMTP delivery failed"}
             )
             db.add(event)
             

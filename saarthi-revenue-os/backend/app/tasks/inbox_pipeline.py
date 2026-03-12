@@ -8,7 +8,7 @@ from app.database.database import SessionLocal
 from app.database.models import InboxThread, InboxMessage, Lead, Meeting, WorkerLog
 from app.services.inbox_classification_service import InboxClassificationService
 from app.services.auto_reply_service import AutoReplyService
-from app.services.email_sender import EmailSenderService
+from app.services.email_sender import EmailSender
 
 @shared_task(name="fetch_new_messages_task", bind=True)
 def fetch_new_messages_task(self, organization_id: str):
@@ -120,16 +120,22 @@ def generate_reply_task(self, message_id: str):
         db.add(out_msg)
         db.commit()
         
-        # Trigger sending asynchronously
-        import asyncio
-        async def run_async_send():
-            return await EmailSenderService.send_email(
-                provider="smtp", 
+        # Fetch active sending account for the org
+        from app.database.models import SendingAccount
+        account = db.query(SendingAccount).filter(
+            SendingAccount.organization_id == thread.organization_id,
+            SendingAccount.is_active == True
+        ).first()
+
+        if account:
+            EmailSender.send_email(
+                account=account,
                 to_email=msg.sender_email,
                 subject=out_msg.subject,
                 body=out_msg.body
             )
-        asyncio.run(run_async_send())
+        else:
+            logger.error(f"No active sending account for org {org_id}")
         
     except Exception as e:
         logger.error(f"Generate reply failed: {str(e)}")
@@ -153,11 +159,23 @@ def schedule_meeting_task(self, lead_id: str, meeting_id: str):
         meeting = db.query(Meeting).filter(Meeting.id == meeting_uuid).first()
         
         if lead and meeting:
-            import asyncio
-            body = f"Hi {lead.contact_name},\n\nLooking forward to our call regarding {meeting.title} on {meeting.scheduled_time}.\nJoin link: {meeting.meeting_link}"
-            async def run_async_send():
-                return await EmailSenderService.send_email("smtp", lead.contact_email, f"Meeting Confirmed: {meeting.title}", body)
-            asyncio.run(run_async_send())
+            body = f"Hi {lead.first_name or lead.contact_name},\n\nLooking forward to our call regarding {meeting.title} on {meeting.scheduled_time}.\nJoin link: {meeting.meeting_link}"
+            
+            from app.database.models import SendingAccount
+            account = db.query(SendingAccount).filter(
+                SendingAccount.organization_id == lead.organization_id,
+                SendingAccount.is_active == True
+            ).first()
+
+            if account:
+                EmailSender.send_email(
+                    account=account,
+                    to_email=lead.contact_email,
+                    subject=f"Meeting Confirmed: {meeting.title}",
+                    body=body
+                )
+            else:
+                logger.error(f"No active sending account for org {lead.organization_id}")
             
     except Exception as e:
         logger.error(f"Schedule meeting failed: {str(e)}")

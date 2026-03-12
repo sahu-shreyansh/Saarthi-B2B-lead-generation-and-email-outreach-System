@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
 from app.database.database import get_db
-from app.database.models import Organization
+from app.database.models import Organization, SendingAccount
 from app.core.deps import get_current_user_and_org, require_role_admin
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -86,6 +86,29 @@ def configure_email_integration(
     }
     current_settings["integrations"] = integrations
     org.settings = current_settings
+    
+    # --- Sync to SendingAccount table for Outreach Workers ---
+    # Invalidate existing accounts
+    db.query(SendingAccount).filter(SendingAccount.organization_id == active_org_id).update({"is_active": False})
+    
+    # Create or update active account
+    smtp_host = config.configuration.get("host")
+    smtp_port = config.configuration.get("port")
+    smtp_user = config.configuration.get("username")
+    smtp_password = config.configuration.get("password")
+    
+    new_account = SendingAccount(
+        organization_id=active_org_id,
+        provider=config.provider,
+        email=smtp_user or "unknown@domain.com",
+        smtp_host=smtp_host,
+        smtp_port=int(smtp_port) if smtp_port else 587,
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        is_active=True,
+        daily_limit=200
+    )
+    db.add(new_account)
     
     db.commit()
     db.refresh(org)

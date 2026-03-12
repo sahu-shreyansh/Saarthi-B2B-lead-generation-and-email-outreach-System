@@ -10,29 +10,52 @@ from app.core.deps import get_current_user, get_current_org_id
 router = APIRouter(prefix="/billing", tags=["Billing"])
 
 class SubscriptionResponse(BaseModel):
-    plan_type: str
+    plan: str
     status: str
-    monthly_email_limit: int
-    monthly_lead_limit: int
+    monthly_credit_limit: int
+    credits_used: int
+    emails_sent_this_month: int
+    updated_at: str
 
 @router.get("/subscription", response_model=SubscriptionResponse)
 def get_subscription(
     org_id: uuid.UUID = Depends(get_current_org_id),
     db: Session = Depends(get_db)
 ):
-    repo = BaseRepository(Subscription, db, org_id)
-    sub = repo.get_multi(limit=1)
+    from app.database.models import UsageTracking
+    import datetime
+    
+    # 1. Get Subscription
+    sub = db.query(Subscription).filter(Subscription.organization_id == org_id).first()
     
     if not sub:
         # Create default FREE subscription if it somehow doesn't exist
-        sub_obj = repo.create(obj_in={
-            "plan": "FREE",
-            "status": "ACTIVE",
-            "monthly_credit_limit": 100
-        })
-        return sub_obj
+        sub = Subscription(
+            organization_id=org_id,
+            plan="FREE",
+            status="ACTIVE",
+            monthly_credit_limit=100,
+            credits_used=0
+        )
+        db.add(sub)
+        db.commit()
+        db.refresh(sub)
         
-    return sub[0]
+    # 2. Get Usage for current month
+    month_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")
+    usage = db.query(UsageTracking).filter(
+        UsageTracking.organization_id == org_id,
+        UsageTracking.month == month_str
+    ).first()
+    
+    return {
+        "plan": sub.plan,
+        "status": sub.status,
+        "monthly_credit_limit": sub.monthly_credit_limit,
+        "credits_used": sub.credits_used,
+        "emails_sent_this_month": usage.emails_sent if usage else 0,
+        "updated_at": sub.updated_at.isoformat()
+    }
 
 # --- Stripe Webhooks would go here normally ---
 @router.post("/webhook")

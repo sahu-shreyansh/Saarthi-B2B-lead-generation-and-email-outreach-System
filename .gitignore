@@ -5,7 +5,25 @@ Thumbs.db
 # Reference images (not part of the app)
 ref_*.png
 *.psd
+img_*.png
 
 # Planning docs (kept locally, not in repo)
-# saas.md
-# ui ux.md
+*.md
+!README.md
+!*/*/README.md
+
+# Data and Archives
+*.json
+*.zip
+
+# Python/Environment
+**/__pycache__/
+**/.venv/
+**/venv/
+**/.env
+
+# Node/Frontend
+**/node_modules/
+**/.next/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo

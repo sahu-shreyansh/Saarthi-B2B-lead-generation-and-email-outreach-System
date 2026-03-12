@@ -1,6 +1,7 @@
 import uuid
 from sqlalchemy.orm import Session
 from app.database.models import Task
+from app.workers.celery_app import celery_app
 from app.tasks.lead_pipeline import run_discovery_task
 from app.tasks.campaign_pipeline import run_campaign
 from app.tasks.inbox_pipeline import fetch_new_messages_task, classify_message_task, generate_reply_task
@@ -9,6 +10,7 @@ class PipelineOrchestrator:
     @staticmethod
     def start_discovery(db: Session, industry: str, location: str, limit: int, organization_id: str):
         """Kicks off the lead discovery pipeline."""
+        print(f"DEBUG: Using Celery Broker: {celery_app.conf.broker_url}")
         task = run_discovery_task.delay(industry, location, limit, organization_id)
         
         # Store task stub in database
@@ -44,4 +46,11 @@ class PipelineOrchestrator:
     def trigger_classification(db: Session, message_id: str):
         """Triggers AI intent classification for a specific message."""
         task = classify_message_task.delay(message_id)
+        return task.id
+
+    @staticmethod
+    def trigger_reply_classification(db: Session, reply_id: str):
+        """Triggers AI intent classification for a specific EmailReply."""
+        from app.tasks.reply_analysis import classify_reply_task
+        task = classify_reply_task.delay(reply_id)
         return task.id

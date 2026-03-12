@@ -1,106 +1,104 @@
-import os
-import aiosmtplib
-import resend
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
-from email.message import EmailMessage
-from loguru import logger
-from typing import Dict, Any, Tuple
+import smtplib
+import ssl
+import uuid
+import re
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from typing import Optional, Dict, Any
+from app.database.models import Lead, SendingAccount
 
-class EmailSenderService:
+class EmailSender:
     @staticmethod
-    async def send_email(
-        provider: str,
+    def personalize_template(template: str, lead: Lead) -> str:
+        """
+        Replace {{field}} with lead data.
+        Supported tags: first_name, last_name, company, title, website, etc.
+        """
+        if not template:
+            return ""
+            
+        # Prepare data dictionary
+        data = {
+            "first_name": lead.first_name or (lead.contact_name.split(' ')[0] if lead.contact_name else "there"),
+            "last_name": lead.last_name or "",
+            "company": lead.company or lead.company_name or "your company",
+            "title": lead.title or "Professional",
+            "website": lead.website or "",
+            "location": lead.location or ""
+        }
+        
+        # Merge metadata for custom tags
+        if lead.metadata_:
+            for k, v in lead.metadata_.items():
+                # Normalize key for matching (lowercase, no spaces)
+                clean_k = k.lower().replace(" ", "_")
+                if clean_k not in data:
+                    data[clean_k] = str(v)
+
+        result = template
+        # Use regex to find all matches of {{tag}}
+        matches = re.findall(r"\{\{([^}]+)\}\}", result)
+        for tag in matches:
+            clean_tag = tag.strip().lower().replace(" ", "_")
+            if clean_tag in data:
+                result = result.replace(f"{{{{{tag}}}}}", data[clean_tag])
+            
+        return result
+
+    @staticmethod
+    def send_email(
+        account: SendingAccount,
         to_email: str,
         subject: str,
         body: str,
-        from_email: str = None
-    ) -> Tuple[bool, str, Dict[str, Any]]:
+        thread_msg_id: Optional[str] = None
+    ) -> Optional[str]:
         """
-        Routes the email to the correct provider: 'smtp', 'sendgrid', or 'resend'.
-        Returns (success_bool, message_id_or_error, response_metadata)
+        Send email via SMTP using the SendingAccount.
+        Returns the Message-ID on success, None on failure.
         """
-        provider = provider.lower()
-        from_email = from_email or os.environ.get("SMTP_USER", "noreply@saarthi.io")
+        if not account or not account.is_active:
+            print(f"EMAIL_SENDER: Account {account.id if account else 'Unknown'} is inactive or missing.")
+            return None
+
+        # Prepare Message
+        msg = MIMEMultipart()
+        msg['From'] = f"{account.email}"
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        
+        # Generate a unique Message-ID for tracking
+        domain = account.smtp_host or "saarthi.ai"
+        msg_id = f"<{uuid.uuid4()}@{domain}>"
+        msg['Message-ID'] = msg_id
+        
+        if thread_msg_id:
+            # Threading headers
+            msg['In-Reply-To'] = thread_msg_id
+            msg['References'] = thread_msg_id
+
+        msg.attach(MIMEText(body, 'plain'))
 
         try:
-            if provider == "sendgrid":
-                return await EmailSenderService._send_sendgrid(to_email, from_email, subject, body)
-            elif provider == "resend":
-                return await EmailSenderService._send_resend(to_email, from_email, subject, body)
+            # SMTP Connection
+            if account.smtp_encryption == "ssl":
+                context = ssl.create_default_context()
+                server = smtplib.SMTP_SSL(account.smtp_host, account.smtp_port, context=context, timeout=10)
             else:
-                return await EmailSenderService._send_smtp(to_email, from_email, subject, body)
-        except Exception as e:
-            logger.error(f"Email failed to send via {provider}: {str(e)}")
-            return False, str(e), {}
-
-    @staticmethod
-    async def _send_smtp(to_email: str, from_email: str, subject: str, body: str) -> Tuple[bool, str, Dict[str, Any]]:
-        host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-        port = int(os.environ.get("SMTP_PORT", 587))
-        user = os.environ.get("SMTP_USER", "")
-        password = os.environ.get("SMTP_PASS", "")
-
-        message = EmailMessage()
-        message["From"] = from_email
-        message["To"] = to_email
-        message["Subject"] = subject
-        message.set_content(body)
-
-        try:
-            await aiosmtplib.send(
-                message,
-                hostname=host,
-                port=port,
-                start_tls=True,
-                username=user,
-                password=password,
-            )
-            # SMTP doesn't always give a clear external ID, return a local mock
-            import uuid
-            msg_id = f"<smtp-{uuid.uuid4()}@{host}>"
-            return True, msg_id, {"provider": "smtp"}
-        except Exception as e:
-            raise e
-
-    @staticmethod
-    async def _send_sendgrid(to_email: str, from_email: str, subject: str, body: str) -> Tuple[bool, str, Dict[str, Any]]:
-        api_key = os.environ.get("SENDGRID_API_KEY")
-        if not api_key:
-            raise ValueError("SENDGRID_API_KEY is not set")
+                server = smtplib.SMTP(account.smtp_host, account.smtp_port, timeout=10)
+                if account.smtp_encryption == "tls":
+                    server.starttls(context=ssl.create_default_context())
             
-        sg = SendGridAPIClient(api_key)
-        message = Mail(
-            from_email=from_email,
-            to_emails=to_email,
-            subject=subject,
-            plain_text_content=body
-        )
-        
-        response = sg.send(message)
-        if response.status_code in [200, 201, 202]:
-            msg_id = response.headers.get("X-Message-Id", "unknown-sg-id")
-            return True, msg_id, {"provider": "sendgrid", "status_code": response.status_code}
-        else:
-            raise Exception(f"SendGrid Error: {response.status_code} {response.body}")
-
-    @staticmethod
-    async def _send_resend(to_email: str, from_email: str, subject: str, body: str) -> Tuple[bool, str, Dict[str, Any]]:
-        api_key = os.environ.get("RESEND_API_KEY")
-        if not api_key:
-            raise ValueError("RESEND_API_KEY is not set")
+            # Login if credentials exist
+            if account.smtp_user and account.smtp_password:
+                server.login(account.smtp_user, account.smtp_password)
+                
+            server.send_message(msg)
+            server.quit()
             
-        resend.api_key = api_key
-        
-        response = resend.Emails.send({
-            "from": from_email,
-            "to": to_email,
-            "subject": subject,
-            "text": body
-        })
-        
-        msg_id = response.get("id")
-        if msg_id:
-            return True, msg_id, {"provider": "resend", "id": msg_id}
-        else:
-            raise Exception(f"Resend Error: {response}")
+            print(f"EMAIL_SENDER: Successfully sent email to {to_email} via {account.email}")
+            return msg_id
+            
+        except Exception as e:
+            print(f"EMAIL_SENDER_ERROR: Failed to send to {to_email} via {account.email}: {str(e)}")
+            return None

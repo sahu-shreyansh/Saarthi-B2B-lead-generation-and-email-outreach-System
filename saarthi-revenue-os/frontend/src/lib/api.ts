@@ -59,8 +59,13 @@ export const fetchLeadGrowth = async (days: number = 30) => {
     return data;
 };
 
-export const fetchEmailPerformance = async () => {
-    const { data } = await api.get('/dashboard/email-performance');
+export const fetchEmailPerformance = async (days: number = 30) => {
+    const { data } = await api.get('/dashboard/email-performance', { params: { days } });
+    return data;
+};
+
+export const fetchRevenueMetrics = async () => {
+    const { data } = await api.get('/dashboard/revenue');
     return data;
 };
 
@@ -250,5 +255,10 @@ export const fetchTasks = async (task_category: string) => {
     const { data } = await api.get('/tasks', { params: { category: task_category } });
     return data;
 }
+
+export const fetchSubscription = async () => {
+    const { data } = await api.get('/billing/subscription');
+    return data;
+};
 
 export default api;

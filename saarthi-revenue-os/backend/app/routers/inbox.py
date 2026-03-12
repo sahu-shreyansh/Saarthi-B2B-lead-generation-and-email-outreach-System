@@ -37,6 +37,7 @@ class IncomingWebhookRequest(BaseModel):
     sender_name: Optional[str] = None
     subject: str
     body: str
+    in_reply_to: Optional[str] = None # Message-ID from CampaignEmail
 
 @router.post("/webhook")
 def incoming_email_webhook(
@@ -44,19 +45,41 @@ def incoming_email_webhook(
     db: Session = Depends(get_db)
 ):
     """
-    Experimental webhook to push real incoming emails into the pipeline.
-    It matches the sender_email to an existing Lead and Thread.
+    Webhook to ingest incoming email replies.
+    Matches lead by in_reply_to or email.
     """
-    from app.database.models import Lead, InboxThread, InboxMessage
-    from app.tasks.inbox_pipeline import classify_message_task
+    from app.database.models import Lead, InboxThread, InboxMessage, EmailReply, CampaignEmail
 
-    # 1. Find the lead
-    lead = db.query(Lead).filter(Lead.contact_email == payload.sender_email).first()
+    # 1. Matching Logic
+    lead = None
+    campaign_email = None
+    
+    if payload.in_reply_to:
+        campaign_email = db.query(CampaignEmail).filter(CampaignEmail.message_id == payload.in_reply_to).first()
+        if campaign_email:
+            lead = db.query(Lead).filter(Lead.id == campaign_email.lead_id).first()
+
     if not lead:
-         # In prod, we might create a discovery lead here, but for now we only process known leads
+        lead = db.query(Lead).filter(Lead.contact_email == payload.sender_email).first()
+
+    if not lead:
+         # Optional: Log orphaned email or create discovery lead
          raise HTTPException(status_code=404, detail="Sender not recognized as an existing lead.")
 
-    # 2. Find or create a thread
+    # 2. Update Lead Status
+    lead.status = "replied"
+    
+    # 3. Save to EmailReply (Master Build requirement)
+    new_reply = EmailReply(
+        campaign_email_id=campaign_email.id if campaign_email else None,
+        lead_id=lead.id,
+        content=payload.body,
+        intent="unknown"
+    )
+    db.add(new_reply)
+    db.flush()
+
+    # 4. Save to InboxMessage/Thread for UI visibility
     thread = db.query(InboxThread).filter(InboxThread.lead_id == lead.id).order_by(InboxThread.latest_message_at.desc()).first()
     if not thread:
         thread = InboxThread(
@@ -66,10 +89,8 @@ def incoming_email_webhook(
             status="active"
         )
         db.add(thread)
-        db.commit()
-        db.refresh(thread)
+        db.flush()
 
-    # 3. Create the message
     new_msg = InboxMessage(
         thread_id=thread.id,
         direction="incoming",
@@ -81,18 +102,21 @@ def incoming_email_webhook(
     )
     db.add(new_msg)
     
-    # Update thread latest activity
     import datetime
-    thread.latest_message_at = datetime.datetime.utcnow()
+    thread.latest_message_at = datetime.datetime.now(datetime.timezone.utc)
     
     db.commit()
     db.refresh(new_msg)
 
-    # 4. Trigger Classification
+    # 5. Trigger AI Classification (Step 9)
     from app.services.pipeline_orchestrator import PipelineOrchestrator
-    PipelineOrchestrator.trigger_classification(db, str(new_msg.id))
+    try:
+        # Pass the EmailReply ID for specialized classification
+        PipelineOrchestrator.trigger_reply_classification(db, str(new_reply.id))
+    except Exception as e:
+        print(f"WEBHOOK_ERROR: Failed to trigger AI classification: {str(e)}")
 
-    return {"status": "accepted", "message_id": str(new_msg.id), "thread_id": str(thread.id)}
+    return {"status": "accepted", "reply_id": str(new_reply.id), "thread_id": str(thread.id)}
 
 @router.get("", response_model=List[ThreadResponse])
 def list_threads(

@@ -5,8 +5,9 @@ from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
 from app.database.database import get_db
-from app.database.models import Lead, Campaign, CampaignEmail, Meeting, AiUsageLog
+from app.database.models import Lead, Campaign, CampaignEmail, Meeting, AiUsageLog, EmailEvent, EmailReply
 from app.core.deps import get_current_user_and_org
+from app.services.revenue_analytics_service import RevenueAnalyticsService
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -73,32 +74,71 @@ def get_lead_growth(
 
 @router.get("/email-performance")
 def get_email_performance(
+    days: int = 30,
     deps = Depends(get_current_user_and_org),
     db: Session = Depends(get_db)
 ):
+    """Returns daily time-series performance data for outreach."""
     current_user, active_org_id, role = deps
-    campaigns = db.query(Campaign).filter(Campaign.organization_id == active_org_id).all()
+    cutoff = datetime.utcnow() - timedelta(days=days)
     
-    total_sent = 0
-    total_opened = 0
-    total_clicked = 0
-    total_replied = 0
+    # Daily Sent
+    sent_results = db.query(
+        func.date(CampaignEmail.sent_at).label("date"),
+        func.count(CampaignEmail.id).label("count")
+    ).join(Campaign).filter(
+        Campaign.organization_id == active_org_id,
+        CampaignEmail.status == "sent",
+        CampaignEmail.sent_at >= cutoff
+    ).group_by(func.date(CampaignEmail.sent_at)).all()
     
-    for c in campaigns:
-        stats = c.stats or {}
-        total_sent += stats.get("sent", 0)
-        total_opened += stats.get("opened", 0)
-        total_clicked += stats.get("clicked", 0)
-        total_replied += stats.get("replied", 0)
+    # Daily Opens
+    open_results = db.query(
+        func.date(EmailEvent.timestamp).label("date"),
+        func.count(EmailEvent.id).label("count")
+    ).join(CampaignEmail).join(Campaign).filter(
+        Campaign.organization_id == active_org_id,
+        EmailEvent.event_type == "opened",
+        EmailEvent.timestamp >= cutoff
+    ).group_by(func.date(EmailEvent.timestamp)).all()
+    
+    # Daily Replies
+    reply_results = db.query(
+        func.date(EmailReply.received_at).label("date"),
+        func.count(EmailReply.id).label("count")
+    ).join(CampaignEmail).join(Campaign).filter(
+        Campaign.organization_id == active_org_id,
+        EmailReply.received_at >= cutoff
+    ).group_by(func.date(EmailReply.received_at)).all()
+    
+    # Merge into time series
+    dates = {}
+    for r in sent_results:
+        d = str(r.date)
+        if d not in dates: dates[d] = {"date": d, "sent": 0, "opened": 0, "replied": 0}
+        dates[d]["sent"] = r.count
         
-    return {
-        "sent": total_sent,
-        "opened": total_opened,
-        "clicked": total_clicked,
-        "replied": total_replied,
-        "open_rate_pct": (total_opened / total_sent * 100) if total_sent > 0 else 0,
-        "reply_rate_pct": (total_replied / total_sent * 100) if total_sent > 0 else 0
-    }
+    for r in open_results:
+        d = str(r.date)
+        if d not in dates: dates[d] = {"date": d, "sent": 0, "opened": 0, "replied": 0}
+        dates[d]["opened"] = r.count
+        
+    for r in reply_results:
+        d = str(r.date)
+        if d not in dates: dates[d] = {"date": d, "sent": 0, "opened": 0, "replied": 0}
+        dates[d]["replied"] = r.count
+        
+    return sorted(dates.values(), key=lambda x: x["date"])
+
+@router.get("/revenue")
+def get_revenue_metrics(
+    deps = Depends(get_current_user_and_org),
+    db: Session = Depends(get_db)
+):
+    """Returns ROI, AI Efficiency, and Pipeline Value."""
+    current_user, active_org_id, role = deps
+    service = RevenueAnalyticsService(db)
+    return service.get_org_revenue_stats(active_org_id)
 
 @router.get("/recent-activity")
 def get_recent_activity(

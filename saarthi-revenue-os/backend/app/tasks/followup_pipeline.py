@@ -6,9 +6,9 @@ from celery import shared_task
 from sqlalchemy import and_, not_
 
 from app.database.database import SessionLocal
-from app.database.models import Campaign, Lead, CampaignEmail, InboxThread, InboxMessage, WorkerLog
+from app.database.models import Campaign, Lead, CampaignEmail, InboxThread, InboxMessage, WorkerLog, SendingAccount
 from app.providers.llm.openrouter_provider import OpenRouterProvider
-from app.services.email_sender import EmailSenderService
+from app.services.email_sender import EmailSender
 from app.providers.llm.prompt_templates import SYSTEM_PROMPT, FOLLOWUP_GENERATION_PROMPT
 
 @shared_task(name="run_followup_campaign", bind=True)
@@ -67,17 +67,23 @@ def run_followup_campaign(self):
                 use_fast_model=True
             )
             
-            # 4. Send Email
-            import asyncio
-            async def send():
-                return await EmailSenderService.send_email(
-                    provider="smtp",
+            # 4. Fetch active sending account for the org
+            account = db.query(SendingAccount).filter(
+                SendingAccount.organization_id == lead.organization_id,
+                SendingAccount.is_active == True
+            ).first()
+
+            if account:
+                msg_id = EmailSender.send_email(
+                    account=account,
                     to_email=lead.contact_email,
                     subject=f"Re: Touching base",
                     body=reply_body
                 )
-            
-            success, msg_id, meta = asyncio.run(send())
+                success = msg_id is not None
+            else:
+                logger.error(f"No active sending account for org {lead.organization_id}")
+                success = False
             
             if success:
                 # Update lead metadata to track follow-up
