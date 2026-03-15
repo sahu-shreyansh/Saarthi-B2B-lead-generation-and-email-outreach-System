@@ -24,7 +24,8 @@ celery_app = Celery(
         "app.tasks.campaign_pipeline",
         "app.tasks.inbox_pipeline",
         "app.tasks.intelligence_pipeline",
-        "app.tasks.followup_pipeline"
+        "app.tasks.followup_pipeline",
+        "app.workers.ai_worker",  # AI Agent tasks
     ]
 )
 
@@ -78,6 +79,11 @@ celery_app.conf.update(
 
         # Meetings
         "schedule_meeting_task":   {"queue": "ai"},
+
+        # AI Agents
+        "generate_email_for_lead_task": {"queue": "ai"},
+        "classify_reply_task":          {"queue": "ai"},
+        "extract_signals_task":         {"queue": "ai"},
     },
 )
 

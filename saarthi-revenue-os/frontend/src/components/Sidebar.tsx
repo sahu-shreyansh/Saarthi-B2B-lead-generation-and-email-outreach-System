@@ -12,7 +12,8 @@ import {
     Settings,
     Zap,
     CalendarDays,
-    Search
+    Search,
+    BrainCircuit
 } from 'lucide-react';
 import { fetchMe } from '@/lib/api';
 
@@ -23,6 +24,7 @@ const NAV_LINKS = [
     { icon: Zap, label: 'Campaigns', href: '/campaigns' },
     { icon: Inbox, label: 'Inbox', href: '/inbox' },
     { icon: CalendarDays, label: 'Meetings', href: '/meetings' },
+    { icon: BrainCircuit, label: 'AI Agents', href: '/ai-agents' },
     { icon: Settings, label: 'Settings', href: '/settings' },
 ];
 

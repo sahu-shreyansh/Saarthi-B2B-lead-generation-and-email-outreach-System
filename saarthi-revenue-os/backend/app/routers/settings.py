@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
-from app.database.database import get_db
+from app.database.database import get_db, get_platform_db
 from app.database.models import Organization, SendingAccount
 from app.core.deps import get_current_user_and_org, require_role_admin
 
@@ -23,7 +23,7 @@ class CalendarIntegrationConfig(BaseModel):
 @router.get("")
 def get_org_settings(
     deps = Depends(get_current_user_and_org),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_platform_db)
 ):
     current_user, active_org_id, role = deps
     org = db.query(Organization).filter(Organization.id == active_org_id).first()
@@ -44,7 +44,7 @@ def get_org_settings(
 def update_org_settings(
     schema: SettingsUpdate,
     active_org_id = Depends(require_role_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_platform_db)
 ):
     org = db.query(Organization).filter(Organization.id == active_org_id).first()
     if not org:
@@ -68,7 +68,7 @@ def update_org_settings(
 def configure_email_integration(
     config: EmailIntegrationConfig,
     active_org_id = Depends(require_role_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_platform_db)
 ):
     """Configure email provider (smtp, sendgrid, resend) for the organization."""
     org = db.query(Organization).filter(Organization.id == active_org_id).first()
@@ -119,7 +119,7 @@ def configure_email_integration(
 def configure_calendar_integration(
     config: CalendarIntegrationConfig,
     active_org_id = Depends(require_role_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_platform_db)
 ):
     """Configure calendar provider (google, calendly) for the organization."""
     org = db.query(Organization).filter(Organization.id == active_org_id).first()

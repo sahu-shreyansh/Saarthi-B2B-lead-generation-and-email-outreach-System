@@ -8,6 +8,7 @@ Responsible for:
 """
 import logging
 from typing import List
+from sqlalchemy.orm import Session
 
 from app.providers.scraping.base_provider import ProviderResponse, NormalizedLead, ProviderError
 from app.providers.scraping.apify_provider import ApifyProvider
@@ -50,28 +51,31 @@ def route_provider(query_type: str):
 def fetch_leads(
     query_type: str,
     query: str,
+    db: Session,
+    org_id: str,
     max_results: int = 50,
     max_pages: int = 1,
     **kwargs
 ) -> ProviderResponse:
     """
-    Fetches leads from the appropriate provider.
-
-    Args:
-        query_type: One of "linkedin", "maps", "website", "google_search"
-        query:      The search query or scrape target
-        max_results: Max number of leads to retrieve (per page for SERP)
-        max_pages:  Number of pages for SERP pagination
-    
-    Returns:
-        ProviderResponse with normalized NormalizedLead list.
-    
-    Raises:
-        ProviderError subclasses on external API failures.
+    Fetches leads from the appropriate provider with dynamic credential support.
     """
     provider = route_provider(query_type)
 
     if query_type in APIFY_TYPES:
-        return provider.scrape(target=query, actor_type=query_type, max_results=max_results, **kwargs)
+        return provider.scrape(
+            target=query, 
+            actor_type=query_type, 
+            max_results=max_results, 
+            db=db, 
+            org_id=org_id, 
+            **kwargs
+        )
     else:
-        return provider.search(query=query, max_pages=max_pages, **kwargs)
+        return provider.search(
+            query=query, 
+            max_pages=max_pages, 
+            db=db, 
+            org_id=org_id, 
+            **kwargs
+        )

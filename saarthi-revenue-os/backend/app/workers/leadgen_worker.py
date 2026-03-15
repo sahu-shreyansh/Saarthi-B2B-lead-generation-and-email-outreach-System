@@ -35,15 +35,23 @@ from app.providers.scraping.base_provider import (
 logger = logging.getLogger(__name__)
 
 
+from app.core.database_router import get_engine_for_org
+from sqlalchemy.orm import sessionmaker
+
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=600, time_limit=660)
-def run_lead_generation_task(self, job_id: str):
+def run_lead_generation_task(self, job_id: str, org_id: Optional[str] = None):
     """
     Executes an async Lead Generation job.
-
-    Reads job parameters from LeadGenerationJob table.
-    Routes to Apify (maps/linkedin/website) or SERP (google_search) via leadgen_service.
+    Uses BYODB routing if org_id is provided.
     """
-    db = SessionLocal()
+    # ── 0. Resolve BYODB Engine ───────────────────────────
+    if org_id:
+        import uuid
+        engine = get_engine_for_org(uuid.UUID(org_id))
+        Session = sessionmaker(bind=engine)
+        db = Session()
+    else:
+        db = SessionLocal()
     job: Optional[LeadGenerationJob] = None
 
     try:
@@ -82,6 +90,8 @@ def run_lead_generation_task(self, job_id: str):
             provider_response = fetch_leads(
                 query_type=query_type,
                 query=query,
+                db=db,
+                org_id=job.organization_id,
                 max_results=max_results,
                 max_pages=max_pages
             )

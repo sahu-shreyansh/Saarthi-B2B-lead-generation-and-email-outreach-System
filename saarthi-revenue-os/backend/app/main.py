@@ -7,7 +7,9 @@ from app.middleware.org_isolation import OrgIsolationMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 
 # Import Routers
-from app.routers import leadgen, auth, campaigns, dashboard, leads, inbox, sending_accounts, billing, stripe, intelligence, tasks, discovery, meetings, settings as settings_router, webhooks
+from app.routers import leadgen, auth, campaigns, dashboard, leads, inbox, sending_accounts, billing, stripe, intelligence, tasks, discovery, meetings, settings as settings_router, webhooks, integrations, database
+from app.routers import ai_outputs
+from app.middleware.ai_usage_guard import AIUsageGuardMiddleware
 from app.workers.celery_app import celery_app # Ensure Celery registry is loaded
 
 print(f"WEB_PROCESS_DEBUG: Celery Broker URL is {celery_app.conf.broker_url}")
@@ -15,7 +17,7 @@ print(f"WEB_PROCESS_DEBUG: Celery Broker URL is {celery_app.conf.broker_url}")
 app = FastAPI(
     title=settings.APP_NAME,
     description="Multi-tenant B2B Outreach SaaS Backend",
-    version="2.0.0"
+    version="20.0"
 )
 
 app.add_middleware(
@@ -29,10 +31,13 @@ app.add_middleware(
 # 2. Strict Multi-Tenant Org Isolation Middleware
 app.add_middleware(OrgIsolationMiddleware)
 
-# 3. Redis Token Bucket Rate Limiter
+# 3. AI Usage Guard (Enforces token limits)
+app.add_middleware(AIUsageGuardMiddleware)
+
+# 4. Redis Token Bucket Rate Limiter
 app.add_middleware(RateLimitMiddleware)
 
-# 4. Include Routers
+# 5. Include Routers
 app.include_router(leadgen.router)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
@@ -47,6 +52,9 @@ app.include_router(tasks.router)
 app.include_router(discovery.router)
 app.include_router(meetings.router)
 app.include_router(settings_router.router)
+app.include_router(integrations.router)
+app.include_router(database.router)
+app.include_router(ai_outputs.router)  # AI Agent endpoints
 app.include_router(webhooks.router)
 
 @app.get("/health")

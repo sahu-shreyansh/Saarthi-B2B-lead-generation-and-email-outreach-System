@@ -3,11 +3,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchMe, fetchOrgSettings, updateOrgSettings, configureEmailIntegration, configureCalendarIntegration, fetchSubscription } from '@/lib/api';
-import { Building2, MessageSquare, Plug, CreditCard, ExternalLink, Zap, Mail, ShieldCheck } from 'lucide-react';
+import { Building2, MessageSquare, Plug, CreditCard, ExternalLink, Zap, Mail, ShieldCheck, BrainCircuit, Database } from 'lucide-react';
+import { IntegrationsPanel } from '@/components/settings/IntegrationsPanel';
+import { DatabasePanel } from '@/components/settings/DatabasePanel';
 
 const SECTIONS = [
     { key: 'org', label: 'Organization details', icon: Building2 },
     { key: 'integrations', label: 'Integrations', icon: Plug },
+    { key: 'database', label: 'Database', icon: Database },
     { key: 'ai', label: 'AI Auto-Reply', icon: MessageSquare },
     { key: 'billing', label: 'Billing & Usage', icon: CreditCard },
 ];
@@ -203,6 +206,15 @@ export default function SettingsPage() {
                                 {calendarMut.isPending ? 'Saving...' : 'Save Calendar Config'}
                             </button>
                         </div>
+
+                        <div className="my-10 border-t border-border" />
+                        
+                        <div className="mb-8">
+                            <h2 className="text-xl font-bold font-heading mb-1">AI & Intelligence Providers</h2>
+                            <p className="text-sm text-secondary">Connect your own API keys to bypass platform limits and use custom models.</p>
+                        </div>
+                        
+                        <IntegrationsPanel />
                     </div>
                 );
             case 'ai':
@@ -332,6 +344,16 @@ export default function SettingsPage() {
                                 <ExternalLink size={16} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                             </button>
                         </div>
+                    </div>
+                );
+            case 'database':
+                return (
+                    <div style={{ padding: '28px 32px', maxWidth: 640 }}>
+                        <div className="mb-8">
+                            <h2 className="text-xl font-bold font-heading mb-1">Database Connectivity</h2>
+                            <p className="text-sm text-secondary">Configure where your organization's data is stored. Managed by Saarthi or hosted on your own infrastructure.</p>
+                        </div>
+                        <DatabasePanel currentConfig={settings?.database_config} />
                     </div>
                 );
             default: return null;

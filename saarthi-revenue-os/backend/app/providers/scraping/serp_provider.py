@@ -114,6 +114,19 @@ class SERPProvider(BaseProvider):
             max_pages: Number of pages to paginate through (10 results/page).
             result_type: "organic" or "maps"
         """
+        db = kwargs.get("db")
+        org_id = kwargs.get("org_id")
+        
+        api_key = self._key
+        if db and org_id:
+            from app.database.models import Organization
+            from app.core.security import decrypt_string
+            org = db.query(Organization).filter(Organization.id == org_id).first()
+            if org and org.serpapi_api_key:
+                decrypted_key = decrypt_string(org.serpapi_api_key)
+                if decrypted_key:
+                    api_key = decrypted_key
+
         if self._is_circuit_open():
             logger.error("[serp] Circuit breaker is OPEN. Skipping provider call.")
             raise NetworkError("SERP circuit breaker is OPEN — provider temporarily disabled.")
@@ -124,7 +137,7 @@ class SERPProvider(BaseProvider):
         for page_num in range(max_pages):
             params = {
                 "q": query,
-                "api_key": self._key,
+                "api_key": api_key,
                 "engine": "google",
                 "num": 10,
                 "start": page_num * 10,

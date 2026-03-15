@@ -114,6 +114,22 @@ class ApifyProvider(BaseProvider):
             actor_type: One of "linkedin", "maps", "website"
             max_results: Max number of results to fetch.
         """
+        db = kwargs.get("db")
+        org_id = kwargs.get("org_id")
+        
+        headers = self._headers
+        if db and org_id:
+            from app.database.models import Organization
+            from app.core.security import decrypt_string
+            org = db.query(Organization).filter(Organization.id == org_id).first()
+            if org and org.apify_api_key:
+                decrypted_key = decrypt_string(org.apify_api_key)
+                if decrypted_key:
+                    headers = {
+                        "Authorization": f"Bearer {decrypted_key}",
+                        "Content-Type": "application/json"
+                    }
+
         if self._is_circuit_open():
             logger.error("[apify] Circuit breaker is OPEN. Skipping provider call.")
             raise NetworkError("Apify circuit breaker is OPEN — provider temporarily disabled.")
@@ -133,7 +149,7 @@ class ApifyProvider(BaseProvider):
                     # Start actor run synchronously (Apify will block until complete, up to 60s)
                     run_resp = client.post(
                         f"{APIFY_BASE}/acts/{actor_id}/run-sync-get-dataset-items",
-                        headers=self._headers,
+                        headers=headers,
                         json=input_payload,
                         params={"clean": "true", "format": "json", "limit": max_results}
                     )

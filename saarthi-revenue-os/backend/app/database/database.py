@@ -14,8 +14,37 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_db():
+def get_platform_db():
+    """
+    Always returns a session to the Saarthi Managed (Platform) database.
+    Used for managing organization-level metadata like BYODB config.
+    """
     db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+from fastapi import Request
+def get_db(request: Request = None):
+    """
+    Unified database session dependency.
+    If org_id is present in request.state, it routes to the correct database (BYODB).
+    Otherwise, defaults to the managed Saarthi database.
+    """
+    from app.core.database_router import get_engine_for_org
+    org_id = None
+    if request:
+        org_id = getattr(request.state, "org_id", None)
+    
+    if org_id:
+        engine_to_use = get_engine_for_org(org_id)
+        # Use a scoped session maker for the specific engine
+        CustomSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_to_use)
+        db = CustomSessionLocal()
+    else:
+        db = SessionLocal()
+        
     try:
         yield db
     finally:

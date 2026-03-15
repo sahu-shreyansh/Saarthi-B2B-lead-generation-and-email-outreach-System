@@ -11,14 +11,12 @@ logger = logging.getLogger(__name__)
 CRITICAL_BOUNCE_RATE = 0.05  # 5%
 MIN_EMAILS_FOR_STATS = 50
 
-@celery_app.task(bind=True)
-def monitor_domain_health_task(self):
-    """
-    Weekly/Daily Cron Job.
-    Calculates bounce rates per SendingAccount/Domain.
-    Auto-pauses accounts that cross the critical threshold to protect deliverability organically.
-    """
-    db = SessionLocal()
+from app.core.database_router import get_engine_for_org
+from sqlalchemy.orm import sessionmaker
+from app.database.models import OrganizationDatabaseConfig
+
+def process_domain_health_for_session(db: SessionLocal):
+    """Internal helper to process domain health for a given database session."""
     try:
         # Get all active sending accounts
         accounts = db.query(SendingAccount).filter(SendingAccount.is_active == True).all()
@@ -31,7 +29,7 @@ def monitor_domain_health_task(self):
                 stats = db.query(
                     func.count(OutreachLog.id).label('total_sent'),
                     func.sum(
-                        func.cast(OutreachLog.status == 'BOUNCED', func.Integer) # Use standard PG int cast
+                        func.cast(OutreachLog.status == 'BOUNCED', func.Integer)
                     ).label('total_bounced')
                 ).filter(
                     OutreachLog.sending_account_id == account.id,
@@ -42,21 +40,19 @@ def monitor_domain_health_task(self):
                 total_bounced = stats.total_bounced or 0
 
                 if total_sent < MIN_EMAILS_FOR_STATS:
-                    continue  # Not enough data for statistical significance
+                    continue  
 
                 bounce_rate = total_bounced / total_sent
-
-                # Extract domain
                 domain = account.email.split('@')[1] if '@' in account.email else account.email
 
                 # 2. Update DomainHealth Record
                 health = db.query(DomainHealth).filter_by(
-                    org_id=account.org_id, 
+                    org_id=account.organization_id, 
                     domain=domain
                 ).first()
 
                 if not health:
-                    health = DomainHealth(org_id=account.org_id, domain=domain)
+                    health = DomainHealth(org_id=account.organization_id, domain=domain)
                     db.add(health)
                 
                 health.bounce_rate = bounce_rate
@@ -70,14 +66,38 @@ def monitor_domain_health_task(self):
                         f"Auto-pausing account to prevent domain blacklisting."
                     )
                     account.is_active = False
-                    # Note: Need to optionally alert organization admins here via email or UI notification.
                     db.commit()
 
             except Exception as e:
                 logger.error(f"Failed processing health for account {account.id}: {e}")
                 db.rollback()
-
-    except Exception as e:
-        logger.error(f"Domain Health Monitor Failed globally: {e}")
     finally:
         db.close()
+
+@celery_app.task(bind=True)
+def monitor_domain_health_task(self):
+    """
+    Weekly/Daily Cron Job.
+    Calculates bounce rates per SendingAccount/Domain across ALL databases.
+    """
+    platform_db = SessionLocal()
+    try:
+        # 1. Process Platform DB
+        process_domain_health_for_session(platform_db)
+
+        # 2. Process External DBs
+        platform_db = SessionLocal() # Re-open
+        external_configs = platform_db.query(OrganizationDatabaseConfig).filter(
+            OrganizationDatabaseConfig.mode == "external"
+        ).all()
+
+        for config in external_configs:
+            try:
+                engine = get_engine_for_org(config.organization_id)
+                Session = sessionmaker(bind=engine)
+                process_domain_health_for_session(Session())
+            except Exception as e:
+                logger.error(f"Failed to process health for external org {config.organization_id}: {e}")
+
+    finally:
+        platform_db.close()

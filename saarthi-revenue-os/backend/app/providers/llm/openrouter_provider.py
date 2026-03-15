@@ -45,13 +45,33 @@ class OpenRouterProvider:
         """
         Executes strict AI pipeline: Service -> Prompt -> Provider -> Model -> Result
         """
+        from app.database.models import Organization
+        from app.core.security import decrypt_string
+
+        # 1. Resolve Credentials and Model
+        org = self.db.query(Organization).filter(Organization.id == org_id).first()
         
-        target_model = self.FAST_MODEL if use_fast_model else self.PRIMARY_MODEL
-        if is_classification:
-            target_model = self.CLASSIFICATION_MODEL
+        api_key = self.api_key # Platform default
+        using_platform_key = True
+        
+        custom_model = None
+        if org and org.openrouter_api_key:
+            decrypted_key = decrypt_string(org.openrouter_api_key)
+            if decrypted_key:
+                api_key = decrypted_key
+                using_platform_key = False
+                custom_model = org.default_llm_model
+
+        # 2. Model Selection
+        if custom_model:
+            target_model = custom_model
+        else:
+            target_model = self.FAST_MODEL if use_fast_model else self.PRIMARY_MODEL
+            if is_classification:
+                target_model = self.CLASSIFICATION_MODEL
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": "https://saarthi.ai",
             "X-Title": "Saarthi Revenue OS",
             "Content-Type": "application/json"
@@ -84,8 +104,6 @@ class OpenRouterProvider:
                     latency = int((time.time() - start_time) * 1000)
                     
                     # Cost Estimate (Simplified for demonstration)
-                    # Claude 3.5 Sonnet: ~$3.00/1M In | ~$15.00/1M Out
-                    # GPT-4o-Mini: ~$0.15/1M In | ~$0.60/1M Out
                     cost_estimate = 0.0
                     if "claude" in target_model.lower():
                         cost_estimate = (prompt_tokens / 1_000_000) * 3.0 + (completion_tokens / 1_000_000) * 15.0
@@ -102,7 +120,8 @@ class OpenRouterProvider:
                         total_tokens=total_tokens,
                         latency=latency,
                         cost_estimate=cost_estimate,
-                        request_id=data.get("id")
+                        request_id=data.get("id"),
+                        is_platform_key=using_platform_key
                     )
                     
                     return result
@@ -114,8 +133,8 @@ class OpenRouterProvider:
                     logger.error(f"[OpenRouter] Total failure on {prompt_type}. Falling back to default: {default_fallback}")
                     return default_fallback
                 else:
-                    # Switch to fast model if primary collapsed
-                    if target_model == self.PRIMARY_MODEL:
+                    # Switch to fast model if primary collapsed (only if not using custom model)
+                    if not custom_model and target_model == self.PRIMARY_MODEL:
                         logger.warning(f"[OpenRouter] Falling back to {self.FAST_MODEL}")
                         target_model = self.FAST_MODEL
                         payload["model"] = target_model
@@ -133,9 +152,23 @@ class OpenRouterProvider:
         total_tokens: int, 
         latency: int,
         cost_estimate: float = 0.0,
-        request_id: Optional[str] = None
+        request_id: Optional[str] = None,
+        is_platform_key: bool = True
     ):
         """Standard AI Observability."""
+        from app.database.models import Organization
+        
+        # 1. Update Organization Usage if using platform key
+        if is_platform_key:
+            try:
+                org = self.db.query(Organization).filter(Organization.id == org_id).first()
+                if org:
+                    org.ai_usage_tokens += total_tokens
+                    self.db.flush() 
+            except Exception as e:
+                logger.error(f"Failed to update org usage: {str(e)}")
+
+        # 2. Log Entry
         log_entry = AiUsageLog(
             organization_id=org_id,
             operation=prompt_type,

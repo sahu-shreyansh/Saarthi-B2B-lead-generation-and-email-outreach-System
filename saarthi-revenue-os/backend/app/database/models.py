@@ -22,6 +22,17 @@ class Organization(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     name = Column(String(255), nullable=False)
     settings = Column(JSONB, default=dict)
+    
+    # AI Integrations (Encrypted)
+    apify_api_key = Column(String(500), nullable=True)
+    serpapi_api_key = Column(String(500), nullable=True)
+    openrouter_api_key = Column(String(500), nullable=True)
+    
+    # LLM Settings & Quotas
+    default_llm_model = Column(String(255), default="mistralai/mistral-7b-instruct")
+    ai_usage_tokens = Column(Integer, default=0)
+    ai_usage_limit = Column(Integer, default=50000) # Default free limit
+    
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -342,4 +353,46 @@ class EmailEvent(Base):
     event_type = Column(String(50), nullable=False)  # sent, delivered, opened, clicked, bounced, unsubscribed
     timestamp = Column(DateTime(timezone=True), default=utc_now)
     metadata_ = Column("metadata", JSONB, default=dict)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class OrganizationDatabaseConfig(Base):
+    __tablename__ = "organization_database_config"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True)
+    mode = Column(String(50), default="managed", nullable=False) # managed, external
+    
+    db_host = Column(String(255), nullable=True)
+    db_port = Column(Integer, nullable=True)
+    db_name = Column(String(255), nullable=True)
+    db_user = Column(String(255), nullable=True)
+    db_password_encrypted = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class AiOutput(Base):
+    """Stores structured output from every AI agent run for analytics, debugging, and model evaluation."""
+    __tablename__ = "ai_outputs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=True)
+
+    # Agent metadata
+    agent_type = Column(String(50), nullable=False)  # signal, classifier, email, reply_classifier, pipeline
+    prompt_version = Column(String(50), nullable=True)  # e.g. "normal_agent_v1", "classifier_v1"
+    mode = Column(String(20), nullable=True)  # normal, classifier
+
+    # Model info
+    model_used = Column(String(100), nullable=True)
+    tokens_used = Column(Integer, default=0)
+    cost_estimate = Column(Numeric(10, 6), default=0.0)
+
+    # Output
+    response_json = Column(JSONB, default=dict)    # Full structured agent output
+    status = Column(String(50), default="success")  # success, failed, fallback
+
     created_at = Column(DateTime(timezone=True), default=utc_now)

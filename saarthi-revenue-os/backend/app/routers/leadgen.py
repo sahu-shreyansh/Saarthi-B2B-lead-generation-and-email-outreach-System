@@ -82,8 +82,8 @@ async def start_lead_generation(
         db.commit()
         db.refresh(job)
         
-        # Trigger Celery Worker
-        run_lead_generation_task.delay(str(job.id))
+        # Trigger Celery Worker — Passing org_id for BYODB routing
+        run_lead_generation_task.delay(str(job.id), str(active_org_id))
 
         return {"job_id": str(job.id), "status": "QUEUED", "query_type": req.query_type, "query": auto_query}
     except ValueError:

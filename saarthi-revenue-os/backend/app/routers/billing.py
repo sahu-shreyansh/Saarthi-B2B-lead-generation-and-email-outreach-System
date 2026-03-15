@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.database.database import get_db, BaseRepository
+from app.database.database import get_db, get_platform_db, BaseRepository
 from app.database.models import Subscription, User
 from app.core.deps import get_current_user, get_current_org_id
 
@@ -20,7 +20,7 @@ class SubscriptionResponse(BaseModel):
 @router.get("/subscription", response_model=SubscriptionResponse)
 def get_subscription(
     org_id: uuid.UUID = Depends(get_current_org_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_platform_db)
 ):
     from app.database.models import UsageTracking
     import datetime

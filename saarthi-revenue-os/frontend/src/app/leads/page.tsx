@@ -2,8 +2,9 @@
 
 import { useLeads, useCreateLead } from '@/hooks/useLeads';
 import { useState, useMemo } from 'react';
-import { Search, CheckSquare, Square, MoreHorizontal, TrendingUp, Plus, Zap, Loader2, X } from 'lucide-react';
+import { Search, CheckSquare, Square, MoreHorizontal, TrendingUp, Plus, Zap, Loader2, X, Brain } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { scoreLead, enrichLead } from '@/lib/api';
 
 const STATUSES: Record<string, string> = {
     NEW: 'badge-blue',
@@ -63,6 +64,34 @@ export default function LeadsPage() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showAddModal, setShowAddModal] = useState(false);
     const [newLead, setNewLead] = useState({ contact_name: '', contact_email: '', company_name: '' });
+    const [aiLoading, setAiLoading] = useState<Record<string, string>>({});
+    const [aiMsg, setAiMsg] = useState<Record<string, { text: string; ok: boolean }>>({});
+
+    const handleScoreLead = async (id: string) => {
+        setAiLoading(p => ({ ...p, [id]: 'score' }));
+        try {
+            await scoreLead(id);
+            setAiMsg(p => ({ ...p, [id]: { text: 'Score queued', ok: true } }));
+        } catch (e: any) {
+            setAiMsg(p => ({ ...p, [id]: { text: e.response?.data?.detail || 'Failed', ok: false } }));
+        } finally {
+            setAiLoading(p => { const n = { ...p }; delete n[id]; return n; });
+            setTimeout(() => setAiMsg(p => { const n = { ...p }; delete n[id]; return n; }), 3000);
+        }
+    };
+
+    const handleEnrichLead = async (id: string) => {
+        setAiLoading(p => ({ ...p, [id]: 'enrich' }));
+        try {
+            await enrichLead(id);
+            setAiMsg(p => ({ ...p, [id]: { text: 'Enrich queued', ok: true } }));
+        } catch (e: any) {
+            setAiMsg(p => ({ ...p, [id]: { text: e.response?.data?.detail || 'Failed', ok: false } }));
+        } finally {
+            setAiLoading(p => { const n = { ...p }; delete n[id]; return n; });
+            setTimeout(() => setAiMsg(p => { const n = { ...p }; delete n[id]; return n; }), 3000);
+        }
+    };
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
@@ -197,9 +226,44 @@ export default function LeadsPage() {
                                             <ConfidenceBar value={lead.score || 0.1} />
                                         </td>
                                         <td>
-                                            <button className="icon-btn">
-                                                <MoreHorizontal size={14} />
-                                            </button>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                {aiMsg[lead.id] && (
+                                                    <span style={{
+                                                        fontSize: 11,
+                                                        color: aiMsg[lead.id].ok ? 'var(--success)' : 'var(--danger)',
+                                                        marginRight: 4
+                                                    }}>
+                                                        {aiMsg[lead.id].text}
+                                                    </span>
+                                                )}
+                                                <button
+                                                    id={`score-btn-${lead.id}`}
+                                                    className="btn btn-ghost btn-sm"
+                                                    title="AI Score"
+                                                    onClick={() => handleScoreLead(lead.id)}
+                                                    disabled={!!aiLoading[lead.id]}
+                                                    style={{ padding: '4px 6px' }}
+                                                >
+                                                    {aiLoading[lead.id] === 'score'
+                                                        ? <Loader2 size={12} className="animate-spin" />
+                                                        : <Zap size={12} color="var(--accent-primary)" />}
+                                                </button>
+                                                <button
+                                                    id={`enrich-btn-${lead.id}`}
+                                                    className="btn btn-ghost btn-sm"
+                                                    title="AI Enrich"
+                                                    onClick={() => handleEnrichLead(lead.id)}
+                                                    disabled={!!aiLoading[lead.id]}
+                                                    style={{ padding: '4px 6px' }}
+                                                >
+                                                    {aiLoading[lead.id] === 'enrich'
+                                                        ? <Loader2 size={12} className="animate-spin" />
+                                                        : <Brain size={12} color="var(--accent-cyan)" />}
+                                                </button>
+                                                <button className="icon-btn">
+                                                    <MoreHorizontal size={14} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))

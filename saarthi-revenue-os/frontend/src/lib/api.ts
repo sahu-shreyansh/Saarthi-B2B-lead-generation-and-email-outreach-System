@@ -261,4 +261,77 @@ export const fetchSubscription = async () => {
     return data;
 };
 
+// ─── AI Integrations ──────────────────────────────────
+export const fetchIntegrations = async () => {
+    const { data } = await api.get('/integrations');
+    return data;
+};
+
+export const fetchAvailableModels = async () => {
+    const { data } = await api.get('/integrations/models');
+    return data;
+};
+
+export const saveApifyKey = async (api_key: string) => {
+    const { data } = await api.post('/integrations/apify', { api_key });
+    return data;
+};
+
+export const saveSerpApiKey = async (api_key: string) => {
+    const { data } = await api.post('/integrations/serpapi', { api_key });
+    return data;
+};
+
+export const saveOpenRouterSettings = async (payload: { api_key: string; default_model: string }) => {
+    const { data } = await api.post('/integrations/openrouter', payload);
+    return data;
+};
+
+export const testIntegration = async (provider: 'apify' | 'serpapi' | 'openrouter') => {
+    const { data } = await api.post('/integrations/test', { provider });
+    return data;
+};
+
+export const testDbConnection = async (payload: any) => {
+    const { data } = await api.post('/database/test', payload);
+    return data;
+};
+
+export const connectExternalDb = async (payload: any) => {
+    const { data } = await api.post('/database/connect', payload);
+    return data;
+};
+
+export const disconnectExternalDb = async () => {
+    const { data } = await api.post('/database/disconnect');
+    return data;
+};
+
+// ─── AI Agents ────────────────────────────────────────────────────────────────
+
+export const fetchAiOutputs = async (agentType?: string, limit = 20) => {
+    const { data } = await api.get('/ai/outputs', { params: { agent_type: agentType, limit } });
+    return data;
+};
+
+export const fetchAiOutputsForLead = async (leadId: string, agentType?: string) => {
+    const { data } = await api.get(`/ai/outputs/${leadId}`, { params: { agent_type: agentType } });
+    return data;
+};
+
+export const generateEmailSync = async (body: {
+    lead_id: string;
+    mode?: string;
+    services?: { service_name: string; service_description: string }[];
+}) => {
+    const { data } = await api.post('/ai/generate-email/sync', body);
+    return data;
+};
+
+export const classifyReply = async (reply_id: string) => {
+    const { data } = await api.post('/ai/classify-reply', { reply_id });
+    return data;
+};
+
+
 export default api;

@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Tuple
 
-from app.database.database import get_db
+from app.database.database import get_db, get_platform_db
 from app.database.models import User
 from app.core.security import decode_access_token
 
@@ -13,7 +13,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_current_user_and_org(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_platform_db),
 ) -> Tuple[User, uuid.UUID, str]:
     """
     Extract user from JWT, verify token_version, and ensure they are an active 
